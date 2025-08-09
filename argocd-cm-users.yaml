@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Enable local users
+  accounts.readonly-user: login
+  accounts.deploy-user: login
+  
+  # Set account capabilities
+  accounts.readonly-user.enabled: "true"
+  accounts.deploy-user.enabled: "true"
+  
+  # Account descriptions
+  accounts.readonly-user: |
+    apiVersion: v1
+    kind: AccountInfo
+    capabilities:
+    - login
+    
+  accounts.deploy-user: |
+    apiVersion: v1
+    kind: AccountInfo
+    capabilities:
+    - login
+  
+  # Application settings
+  application.instanceLabelKey: argocd.argoproj.io/instance
+  
+  # Server configuration
+  server.rbac.log.enforce.enable: "true"
+  
+  # Timeout settings
+  timeout.hard.reconciliation: 0s
+  timeout.reconciliation: 180s
+  
+  # Repository configuration
+  repositories: |
+    - type: git
+      url: https://github.com/samtaitai/argocd-example-apps.git
+    
+  # URL for ArgoCD server
+  url: https://localhost:8080

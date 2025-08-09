@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Policy CSV containing all RBAC rules
+  policy.csv: |
+    # Default policy for authenticated users (minimal access)
+    p, role:authenticated, applications, get, */*, allow
+    p, role:authenticated, certificates, get, *, allow
+    p, role:authenticated, clusters, get, *, allow
+    p, role:authenticated, repositories, get, *, allow
+    p, role:authenticated, projects, get, *, allow
+    
+    # Read-only role - can only view applications and projects
+    p, role:readonly, applications, get, */*, allow
+    p, role:readonly, logs, get, */*, allow
+    p, role:readonly, projects, get, *, allow
+    p, role:readonly, clusters, get, *, allow
+    p, role:readonly, repositories, get, *, allow
+    p, role:readonly, certificates, get, *, allow
+    p, role:readonly, accounts, get, *, allow
+    
+    # Deploy-only role - can sync applications but not modify projects
+    p, role:deploy-only, applications, get, */*, allow
+    p, role:deploy-only, applications, sync, */*, allow
+    p, role:deploy-only, applications, action/*, */*, allow
+    p, role:deploy-only, logs, get, */*, allow
+    p, role:deploy-only, exec, create, */*, allow
+    p, role:deploy-only, projects, get, *, allow
+    p, role:deploy-only, clusters, get, *, allow
+    p, role:deploy-only, repositories, get, *, allow
+    p, role:deploy-only, certificates, get, *, allow
+    p, role:deploy-only, accounts, get, *, allow
+    
+    # Explicitly deny dangerous operations for deploy-only role
+    p, role:deploy-only, applications, delete, */*, deny
+    p, role:deploy-only, applications, create, */*, deny
+    p, role:deploy-only, projects, create, *, deny
+    p, role:deploy-only, projects, update, *, deny
+    p, role:deploy-only, projects, delete, *, deny
+    p, role:deploy-only, clusters, create, *, deny
+    p, role:deploy-only, clusters, update, *, deny
+    p, role:deploy-only, clusters, delete, *, deny
+    p, role:deploy-only, repositories, create, *, deny
+    p, role:deploy-only, repositories, update, *, deny
+    p, role:deploy-only, repositories, delete, *, deny
+    
+    # Explicitly deny all write operations for read-only role
+    p, role:readonly, applications, create, */*, deny
+    p, role:readonly, applications, update, */*, deny
+    p, role:readonly, applications, delete, */*, deny
+    p, role:readonly, applications, sync, */*, deny
+    p, role:readonly, applications, action/*, */*, deny
+    p, role:readonly, exec, create, */*, deny
+    p, role:readonly, projects, create, *, deny
+    p, role:readonly, projects, update, *, deny
+    p, role:readonly, projects, delete, *, deny
+    p, role:readonly, clusters, create, *, deny
+    p, role:readonly, clusters, update, *, deny
+    p, role:readonly, clusters, delete, *, deny
+    p, role:readonly, repositories, create, *, deny
+    p, role:readonly, repositories, update, *, deny
+    p, role:readonly, repositories, delete, *, deny
+    
+    # Group assignments - map users to roles
+    g, readonly-user, role:readonly
+    g, deploy-user, role:deploy-only
+    
+  # Default policy for authenticated users
+  policy.default: role:authenticated
+  
+  # RBAC scopes to examine during RBAC enforcement
+  scopes: '[groups]'
+  
+  # Policy matching mode (glob or regex)
+  policy.matchMode: glob

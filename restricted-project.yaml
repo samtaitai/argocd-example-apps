@@ -1,0 +1,75 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: restricted-demo-project
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Restricted project for RBAC demonstration
+  
+  # Source repositories - only allow specific repository
+  sourceRepos:
+  - https://github.com/samtaitai/argocd-example-apps.git
+  
+  # Destination restrictions - only allow default namespace
+  destinations:
+  - namespace: default
+    server: https://kubernetes.default.svc
+  
+  # Cluster resource whitelist - allow only basic resources
+  clusterResourceWhitelist:
+  - group: ""
+    kind: Namespace
+  
+  # Namespace resource whitelist - allow common application resources
+  namespaceResourceWhitelist:
+  - group: ""
+    kind: Service
+  - group: ""
+    kind: ConfigMap
+  - group: ""
+    kind: Secret
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: ReplicaSet
+  - group: ""
+    kind: Pod
+  - group: networking.k8s.io
+    kind: Ingress
+  
+  # Namespace resource blacklist - deny sensitive resources
+  namespaceResourceBlacklist:
+  - group: ""
+    kind: ServiceAccount
+  - group: rbac.authorization.k8s.io
+    kind: Role
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRole
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRoleBinding
+  
+  # Project roles for fine-grained access control
+  roles:
+  # Read-only role within this project
+  - name: readonly
+    description: Read-only access to applications in this project
+    policies:
+    - p, proj:restricted-demo-project:readonly, applications, get, restricted-demo-project/*, allow
+    - p, proj:restricted-demo-project:readonly, logs, get, restricted-demo-project/*, allow
+    groups:
+    - readonly-group
+    
+  # Deploy-only role within this project
+  - name: deployer
+    description: Can sync applications but not delete or modify project
+    policies:
+    - p, proj:restricted-demo-project:deployer, applications, get, restricted-demo-project/*, allow
+    - p, proj:restricted-demo-project:deployer, applications, sync, restricted-demo-project/*, allow
+    - p, proj:restricted-demo-project:deployer, logs, get, restricted-demo-project/*, allow
+    - p, proj:restricted-demo-project:deployer, exec, create, restricted-demo-project/*, allow
+    groups:
+    - deployer-group
