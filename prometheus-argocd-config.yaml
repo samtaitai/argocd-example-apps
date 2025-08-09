@@ -8,16 +8,17 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
-    
+
+    # Alerting rules
     rule_files:
       - "/etc/prometheus/rules/*.yml"
     
     # Uncomment the following section in Step 7 to enable Alertmanager integration:
-    # alerting:
-    #   alertmanagers:
-    #     - static_configs:
-    #         - targets:
-    #           - alertmanager-service:9093
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager-service:9093
     
     scrape_configs:
       # Argo CD Application Controller Metrics (Port 8082)

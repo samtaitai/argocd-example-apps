@@ -35,10 +35,9 @@ Test that the Application Controller metrics endpoint is working:
 
 ### For Windows Command Prompt:
 ```cmd
-REM Port forward to test metrics (Application Controller - port 8082)
 kubectl port-forward svc/argocd-metrics -n argocd 8082:8082
 
-REM In another CMD window, test the metrics endpoint
+REM Test the metrics endpoint (use any option above first)
 curl http://localhost:8082/metrics
 ```
 
@@ -256,8 +255,8 @@ Then open your browser to `http://localhost:9093`
 
 2. **Verify Prometheus-Alertmanager Connection**:
    - Go to Prometheus at `http://localhost:9090`
-   - Navigate to **Status > Runtime & Build Information**
-   - Check **Status > Targets** to see if Alertmanager is listed
+   - Navigate to **Status > Targets** to see if Alertmanager is listed
+   - Look for `alertmanager-service:9093` in the targets list
 
 ### Default Configuration Details:
 
