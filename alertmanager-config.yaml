@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'localhost:587'
+      smtp_from: 'alertmanager@example.org'
+    
+    route:
+      group_by: ['alertname']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'web.hook'
+    
+    receivers:
+    - name: 'web.hook'
+      webhook_configs:
+      - url: 'http://localhost:5001/'
+        send_resolved: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:latest
+        args:
+          - '--config.file=/etc/alertmanager/alertmanager.yml'
+          - '--storage.path=/alertmanager'
+          - '--web.external-url=http://localhost:9093'
+        ports:
+        - containerPort: 9093
+        volumeMounts:
+        - name: alertmanager-config-volume
+          mountPath: /etc/alertmanager/
+        - name: alertmanager-storage-volume
+          mountPath: /alertmanager
+      volumes:
+      - name: alertmanager-config-volume
+        configMap:
+          defaultMode: 420
+          name: alertmanager-config
+      - name: alertmanager-storage-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-service
+  namespace: monitoring
+spec:
+  selector:
+    app: alertmanager
+  type: ClusterIP
+  ports:
+    - port: 9093
+      targetPort: 9093
