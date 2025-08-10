@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-ui
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: nginx-ui
+  template:
+    metadata:
+      labels:
+        app: nginx-ui
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.15.4
+          ports:
+            - containerPort: 80
