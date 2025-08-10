@@ -7,26 +7,13 @@ metadata:
     app.kubernetes.io/name: argocd-cm
     app.kubernetes.io/part-of: argocd
 data:
-  # Enable local users
+  # Enable local users with login capability (simple string format)
   accounts.readonly-user: login
   accounts.deploy-user: login
   
-  # Set account capabilities
+  # Enable the accounts
   accounts.readonly-user.enabled: "true"
   accounts.deploy-user.enabled: "true"
-  
-  # Account descriptions
-  accounts.readonly-user: |
-    apiVersion: v1
-    kind: AccountInfo
-    capabilities:
-    - login
-    
-  accounts.deploy-user: |
-    apiVersion: v1
-    kind: AccountInfo
-    capabilities:
-    - login
   
   # Application settings
   application.instanceLabelKey: argocd.argoproj.io/instance

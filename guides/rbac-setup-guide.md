@@ -1,7 +1,4 @@
-# ArgoCD RBAC ImplementatThis project will:
-- Allow deployments only from `https://github.com/samtaitai/argocd-example-apps` repository
-- Restrict deployments to `default` namespace only
-- Allow only basic Kubernetes resources (no RBAC, CRDs,Guide
+# ArgoCD RBAC Implementation Guide
 
 This guide demonstrates how to implement Role-Based Access Control (RBAC) in ArgoCD using:
 - AppProjects with restricted access
@@ -58,20 +55,16 @@ This creates two local users:
 
 ### 2.2 Set Initial Passwords
 
-```bash
-# Set password for readonly-user
-kubectl -n argocd patch secret argocd-secret \
-  -p '{"stringData": {
-    "accounts.readonly-user.password": "'$(argocd account bcrypt --password readonly123)'"
-  }}'
+**Windows CMD (Two-step process):**
+```cmd
+REM Step 1: Generate hashes (copy the output from each command)
+argocd account bcrypt --password readonly123
+argocd account bcrypt --password deploy123
 
-# Set password for deploy-user
-kubectl -n argocd patch secret argocd-secret \
-  -p '{"stringData": {
-    "accounts.deploy-user.password": "'$(argocd account bcrypt --password deploy123)'"
-  }}'
+REM Step 2: Use the hash outputs in these commands (replace HASH_HERE with actual values)
+kubectl -n argocd patch secret argocd-secret -p "{\"stringData\": {\"accounts.readonly-user.password\": \"$2a$10$MXSeDSfiW4dBQAldEzMaE.79qTWfmLEyZRSEckgygYrV6VhZySqVO\"}}"
+kubectl -n argocd patch secret argocd-secret -p "{\"stringData\": {\"accounts.deploy-user.password\": \"$2a$10$Ngu.7KNUAoNL9FzFF9xI9.g1CmRDyQO.PAloVbvrJTM3w2PKjjCSm\"}}"
 ```
-
 ## Step 3: Define RBAC Roles in argocd-rbac-cm
 
 Create role-based permissions that control what each user can do.
@@ -156,10 +149,6 @@ argocd app sync restricted-guestbook
 # Try to delete application (should fail)
 argocd app delete restricted-guestbook
 # Expected: "permission denied" error
-
-# Try to modify project (should fail)
-argocd proj role create restricted-demo-project test-role
-# Expected: "permission denied" error
 ```
 
 ## Step 6: Test Deploy-Only User Access
@@ -181,9 +170,6 @@ argocd login localhost:8080 --username deploy-user --password deploy123 --insecu
 # Sync application (should work)
 argocd app sync restricted-guestbook
 
-# View application status (should work)
-argocd app get restricted-guestbook
-
 # Wait for sync to complete
 argocd app wait restricted-guestbook
 ```
@@ -197,10 +183,6 @@ argocd app delete restricted-guestbook
 
 # Try to modify project settings (should fail)
 argocd proj role create restricted-demo-project deploy-role
-# Expected: "permission denied" error
-
-# Try to create new application outside project (should fail)
-argocd app create test-app --repo https://github.com/other/repo.git --path guestbook --dest-server https://kubernetes.default.svc --dest-namespace default
 # Expected: "permission denied" error
 ```
 
@@ -228,16 +210,6 @@ kubectl describe application restricted-guestbook -n argocd
 argocd app get restricted-guestbook --show-operation
 ```
 
-### 7.3 Monitor RBAC Policy Violations
-
-```powershell
-# Check for RBAC violations in server logs (Windows PowerShell)
-kubectl logs deployment/argocd-server -n argocd --tail=100 | Select-String -Pattern "rbac" -CaseSensitive:$false
-
-# Monitor real-time access denials
-kubectl logs -f deployment/argocd-server -n argocd | Select-String -Pattern "denied|forbidden|unauthorized"
-```
-
 ## Step 8: Verify Access Denied Messages
 
 Document the expected error messages and UI behaviors.
@@ -262,46 +234,6 @@ In the ArgoCD UI, restricted actions will show:
 - HTTP 403 error messages in browser console
 - Notification banners with permission denied messages
 
-### 8.3 Application Event Logs
-
-Check application events for access attempts:
-
-```powershell
-# View recent application events (Windows PowerShell)
-kubectl get events -n argocd --field-selector involvedObject.name=restricted-guestbook --sort-by='.lastTimestamp'
-
-# Check application status for permission-related messages
-argocd app get restricted-guestbook --show-params
-```
-
-## Step 9: Testing Edge Cases and Validation
-
-Verify the security boundaries are properly enforced.
-
-### 9.1 Test Cross-Project Access
-
-```bash
-# Try to access applications in different projects (should fail)
-argocd app create test-default --repo https://github.com/samtaitai/argocd-example-apps.git --path guestbook --dest-server https://kubernetes.default.svc --dest-namespace default --project default
-
-# Try to sync applications in default project (should fail for restricted users)
-argocd app sync some-default-project-app
-```
-
-### 9.2 Test Repository Restrictions
-
-```bash
-# Try to create app from unauthorized repository (should fail)
-argocd app create unauthorized-app --repo https://github.com/unauthorized/repo.git --path app --dest-server https://kubernetes.default.svc --dest-namespace demo-namespace --project restricted-demo-project
-```
-
-### 9.3 Test Namespace Restrictions
-
-```bash
-# Try to deploy to unauthorized namespace (should fail)
-argocd app create restricted-app-wrong-ns --repo https://github.com/samtaitai/argocd-example-apps.git --path guestbook --dest-server https://kubernetes.default.svc --dest-namespace monitoring --project restricted-demo-project
-```
-
 ## Step 10: Cleanup and Reset
 
 Clean up the test environment when done.
@@ -319,7 +251,7 @@ kubectl delete appproject restricted-demo-project -n argocd
 kubectl delete configmap argocd-rbac-cm -n argocd
 
 # Remove user configuration (restore original)
-kubectl patch configmap argocd-cm -n argocd --type='json' -p='[{"op": "remove", "path": "/data/accounts.readonly-user"}, {"op": "remove", "path": "/data/accounts.deploy-user"}]'
+kubectl patch configmap argocd-cm -n argocd --type=merge -p="{\"data\":{\"accounts.readonly-user\":null,\"accounts.deploy-user\":null}}"
 
 # Restart ArgoCD server
 kubectl rollout restart deployment argocd-server -n argocd
@@ -333,52 +265,3 @@ kubectl get appproject -n argocd
 kubectl get application -n argocd
 argocd account list
 ```
-
-## Expected Results Summary
-
-| User Type | Can View Apps | Can Sync Apps | Can Delete Apps | Can Modify Project |
-|-----------|---------------|---------------|-----------------|-------------------|
-| readonly-user | ✅ | ❌ | ❌ | ❌ |
-| deploy-user | ✅ | ✅ | ❌ | ❌ |
-| admin | ✅ | ✅ | ✅ | ✅ |
-
-## Troubleshooting
-
-### Windows PowerShell Specific Commands
-
-For Windows users, here are the PowerShell equivalents of common monitoring commands:
-
-```powershell
-# Monitor ArgoCD server logs for permission denials
-kubectl logs -f deployment/argocd-server -n argocd | Select-String -Pattern "permission|denied|forbidden" -CaseSensitive:$false
-
-# Get last 50 log lines and filter for RBAC issues
-kubectl logs deployment/argocd-server -n argocd --tail=50 | Select-String -Pattern "rbac|permission" -CaseSensitive:$false
-
-# Check if ArgoCD server is running
-kubectl get pods -n argocd | Select-String "argocd-server"
-
-# View application status
-kubectl get applications -n argocd
-```
-
-### Common Issues
-
-1. **RBAC not taking effect**: Restart argocd-server deployment
-2. **User login fails**: Check password was set correctly in argocd-secret
-3. **Permissions too restrictive**: Verify RBAC policies syntax
-4. **UI not showing restrictions**: Clear browser cache and re-login
-
-### Validation Commands
-
-```bash
-# Test RBAC policy syntax
-argocd admin settings rbac validate --policy-file argocd-rbac-cm.yaml
-
-# Test specific permissions
-argocd admin settings rbac can readonly-user get applications "restricted-demo-project/restricted-guestbook"
-argocd admin settings rbac can deploy-user sync applications "restricted-demo-project/restricted-guestbook"
-argocd admin settings rbac can deploy-user delete applications "restricted-demo-project/restricted-guestbook"
-```
-
-This guide provides a complete implementation of RBAC in ArgoCD with practical testing scenarios and expected outcomes.
