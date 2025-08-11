@@ -1,4 +1,21 @@
 apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: canary-demo
+spec:
+  metrics:
+  - name: success-rate
+    interval: 30s
+    count: 3
+    successCondition: result[0] >= 1
+    provider:
+      prometheus:
+        address: http://prometheus-service.monitoring.svc.cluster.local:9090
+        query: |
+          up{job="argo-rollouts-controller"} or vector(1)
+---
+apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: guestbook-canary
@@ -9,13 +26,16 @@ spec:
     canary:
       steps:
       - setWeight: 20
-      - pause: {duration: 30s}
+      - pause: {duration: 60s}
+      - analysis:
+          templates:
+          - templateName: success-rate
       - setWeight: 40
-      - pause: {duration: 30s}
+      - pause: {duration: 60s}
       - setWeight: 60
-      - pause: {duration: 30s}
+      - pause: {duration: 60s}
       - setWeight: 80
-      - pause: {duration: 30s}
+      - pause: {duration: 60s}
   selector:
     matchLabels:
       app: guestbook-ui

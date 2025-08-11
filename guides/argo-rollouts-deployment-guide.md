@@ -89,7 +89,7 @@ The canary rollout configuration is provided in `canary-rollout.yaml` which conv
 
 ```bash
 # Apply the canary rollout
-kubectl apply -f canary-rollout.yaml
+kubectl apply -f ./manifests/canary-rollout.yaml
 
 # Verify deployment
 kubectl get rollout -n canary-demo
@@ -394,6 +394,312 @@ kubectl argo rollouts undo guestbook-bluegreen -n bluegreen-demo --to-revision=1
 kubectl argo rollouts get rollout guestbook-canary -n canary-demo
 kubectl argo rollouts get rollout guestbook-bluegreen -n bluegreen-demo
 ```
+
+## Step 8: Set Up Prometheus and Grafana Monitoring
+
+Monitor Argo Rollouts metrics with Prometheus and visualize them in Grafana dashboards.
+
+### 8.1 Update Existing Prometheus Configuration
+
+Since you already have Prometheus installed from the previous Argo CD metrics lab, we just need to update the configuration to also scrape Argo Rollouts metrics.
+
+```bash
+# Verify existing monitoring namespace and Prometheus installation
+kubectl get pods -n monitoring
+
+# Update the existing Prometheus configuration to include Argo Rollouts scraping
+# The prometheus-argocd-config.yaml file has been updated to include both Argo CD and Argo Rollouts
+# Let's apply the updated configuration directly
+kubectl apply -f manifests/prometheus-argocd-config.yaml
+
+# Restart Prometheus to reload the configuration
+kubectl delete pod -l app=prometheus -n monitoring
+
+# Wait for Prometheus to restart
+kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=300s
+
+# Verify both Prometheus and existing components are running
+kubectl get pods -n monitoring
+```
+
+### 8.2 Configure Argo Rollouts Controller for Metrics
+
+Enable Prometheus scraping on the Argo Rollouts controller.
+
+```bash
+# Patch Argo Rollouts controller to add Prometheus annotations
+@'
+{
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "prometheus.io/scrape": "true",
+          "prometheus.io/path": "/metrics",
+          "prometheus.io/port": "8090"
+        }
+      }
+    }
+  }
+}
+'@ | Out-File -FilePath patch-rollouts-metrics.json -Encoding utf8
+
+kubectl patch deployment argo-rollouts -n argo-rollouts --type merge --patch-file patch-rollouts-metrics.json
+
+# Clean up patch file
+Remove-Item patch-rollouts-metrics.json
+
+# Restart Argo Rollouts controller to apply changes
+kubectl rollout restart deployment/argo-rollouts -n argo-rollouts
+
+# Verify controller is running with metrics enabled
+kubectl get pods -n argo-rollouts
+
+# Check if Prometheus is scraping Argo Rollouts
+kubectl get endpoints -n argo-rollouts argo-rollouts-metrics
+
+# Verify metrics endpoint is accessible
+kubectl port-forward -n argo-rollouts svc/argo-rollouts-metrics 8090:8090
+# Test: curl http://localhost:8090/metrics
+```
+
+### 8.3 Access Prometheus UI
+
+```bash
+# Port forward to access Prometheus UI (using existing service from previous lab)
+kubectl port-forward svc/prometheus-service -n monitoring 9090:9090
+
+# Access Prometheus at: http://localhost:9090
+# Check if Argo Rollouts target is being scraped in Status > Targets
+# You should now see both:
+# - argocd-application-controller job (from previous lab)
+# - argo-rollouts-controller job (newly added)
+```
+
+### 8.4 Access Existing Grafana
+
+Since you already have Grafana from the previous Argo CD metrics lab, let's access it.
+
+```bash
+# Port forward to access existing Grafana UI
+kubectl port-forward svc/grafana-service -n monitoring 3000:3000
+
+# Access Grafana at: http://localhost:3000
+# Login with the same credentials from your previous lab:
+# Username: admin
+# Password: admin123 (or whatever you set in the previous lab)
+
+# The Prometheus data source should already be configured from the previous lab
+# pointing to: http://prometheus-service:9090
+```
+
+### 8.5 Create Argo Rollouts Dashboard
+
+Create a custom Grafana dashboard manually through the UI to monitor rollout metrics.
+
+```bash
+# Access Grafana UI (if not already port-forwarded)
+kubectl port-forward svc/grafana-service -n monitoring 3000:3000
+
+# Open browser to: http://localhost:3000
+# Login with: admin / admin123 (or your password from previous lab)
+```
+
+**Create Dashboard Manually in Grafana UI:**
+
+1. **Create New Dashboard:**
+   - Click "+" in left sidebar → "Dashboard"
+   - Click "Add new panel"
+
+2. **Panel 1: Rollout Phase Status**
+   - Panel Title: "Rollout Phase Status"
+   - Visualization: "Stat"
+   - Query: `rollout_info{namespace=~".*demo.*"}`
+   - Value mappings: 0=Healthy, 1=Progressing, 2=Paused, 3=Error
+
+3. **Panel 2: Canary Weight Distribution**
+   - Panel Title: "Canary Weight Distribution"
+   - Visualization: "Gauge"
+   - Query: `rollout_info_replicas_updated{namespace=~".*demo.*"} / rollout_info_replicas_desired{namespace=~".*demo.*"} * 100`
+   - Unit: Percent (0-100)
+
+4. **Panel 3: Rollout Replica Status**
+   - Panel Title: "Rollout Replica Status"
+   - Visualization: "Time series"
+   - Query A: `rollout_info_replicas_desired{namespace=~".*demo.*"}` (Legend: "Desired - {{rollout}}")
+   - Query B: `rollout_info_replicas_available{namespace=~".*demo.*"}` (Legend: "Available - {{rollout}}")
+   - Query C: `rollout_info_replicas_updated{namespace=~".*demo.*"}` (Legend: "Updated - {{rollout}}")
+
+5. **Panel 4: Analysis Run Status**
+   - Panel Title: "Analysis Run Status"
+   - Visualization: "Stat"
+   - Query: `analysis_run_info{namespace=~".*demo.*"}`
+   - Value mappings: 0=Pending, 1=Running, 2=Successful, 3=Failed, 4=Error
+
+7. **Dashboard Settings:**
+   - Title: "Argo Rollouts Monitoring"
+   - Time range: Last 1 hour
+   - Refresh: 5s
+   - Save the dashboard
+
+### 8.6 Deploy Test Rollout with Analysis
+
+Update the existing canary rollout to include analysis for monitoring demonstration.
+
+```bash
+# Apply the enhanced canary rollout with analysis template
+# This updates the existing guestbook-canary rollout to include analysis
+kubectl apply -f manifests/canary-rollout-with-analysis.yaml
+
+# Verify the analysis template was created
+kubectl get analysistemplate -n canary-demo
+
+# Check the updated rollout configuration
+kubectl argo rollouts get rollout guestbook-canary -n canary-demo
+
+# The rollout now includes:
+# - Analysis step after 20% traffic weight
+# - Prometheus-based success rate check
+# - Enhanced monitoring capabilities for Grafana dashboard
+```
+
+### 8.8 Trigger Rollout Update and Observe Metrics
+
+```bash
+# Trigger an update to generate metrics for the enhanced rollout
+@'
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "guestbook-ui",
+            "image": "nginx:1.16.1"
+          }
+        ]
+      }
+    }
+  }
+}
+'@ | Out-File -FilePath patch-monitored-update.json -Encoding utf8
+
+kubectl patch rollout guestbook-canary -n canary-demo --type merge --patch-file patch-monitored-update.json
+
+# Clean up patch file
+Remove-Item patch-monitored-update.json
+
+# Watch the progress in multiple ways:
+# 1. CLI monitoring
+kubectl argo rollouts get rollout guestbook-canary -n canary-demo --watch
+
+# 2. Check analysis runs (new feature!)
+kubectl get analysisrun -n canary-demo --watch
+
+# 3. Monitor in Grafana dashboard (http://localhost:3000)
+#    - Observe rollout phase changes
+#    - Watch canary weight progression
+#    - See analysis run status updates
+#    - Monitor replica count changes
+
+# The rollout will now pause at 20% for analysis before continuing
+# You'll see analysis runs being created and executed
+# Manually promote if needed (or wait for analysis to complete)
+kubectl argo rollouts promote guestbook-canary -n canary-demo
+```
+
+### 8.9 Key Metrics to Monitor
+
+**Essential Argo Rollouts Metrics:**
+
+```promql
+# Rollout phase status (0=Healthy, 1=Progressing, 2=Paused, 3=Error)
+rollout_info{namespace="canary-demo"}
+
+# Canary weight percentage
+(rollout_info_replicas_updated{namespace="canary-demo"} / rollout_info_replicas_desired{namespace="canary-demo"}) * 100
+
+# Analysis run status (0=Pending, 1=Running, 2=Successful, 3=Failed, 4=Error)
+analysis_run_info{namespace="canary-demo"}
+
+# Rollout reconciliation rate
+rate(rollout_reconcile[5m])
+
+# Available vs Desired replicas
+rollout_info_replicas_available{namespace="canary-demo"}
+rollout_info_replicas_desired{namespace="canary-demo"}
+
+# Analysis run metric phase
+analysis_run_metric_phase{namespace="canary-demo"}
+```
+
+### 8.10 Dashboard Features
+
+The created Grafana dashboard includes:
+
+1. **Rollout Phase Status Panel** - Shows current rollout state (Healthy/Progressing/Paused/Error)
+2. **Canary Weight Gauge** - Displays current traffic percentage to new version
+3. **Replica Status Timeline** - Tracks desired vs available vs updated replicas over time
+4. **Analysis Run Status** - Shows analysis results (Pending/Running/Successful/Failed)
+5. **Reconciliation Performance** - Monitors controller performance metrics
+
+### 8.11 Troubleshooting Monitoring
+
+```bash
+# Check Prometheus targets status
+# Go to Prometheus UI > Status > Targets
+# Look for argo-rollouts job status
+
+# Verify Grafana data source
+# Go to Grafana > Configuration > Data Sources
+# Test the Prometheus connection
+
+# Check if metrics are being generated
+kubectl get rollouts -n canary-demo
+kubectl get analysisrun -n canary-demo
+```
+
+**Common Issue: Prometheus Not Scraping Argo Rollouts Metrics**
+
+If you don't see the `argo-rollouts-controller` target in Prometheus UI Status → Targets:
+
+```bash
+# 1. Verify Prometheus configuration includes Argo Rollouts scraping
+kubectl get configmap prometheus-config -n monitoring -o yaml | Select-String -Pattern "argo-rollouts"
+
+# If not found, the configuration update wasn't applied properly:
+# Re-apply the updated Prometheus configuration
+kubectl apply -f manifests/prometheus-argocd-config.yaml
+
+# 2. Restart Prometheus to reload configuration
+kubectl delete pod -l app=prometheus -n monitoring
+
+# Wait for Prometheus to restart
+kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=300s
+
+# 3. Verify the configuration was updated successfully
+kubectl get configmap prometheus-config -n monitoring -o jsonpath='{.data.prometheus\.yml}' | Select-String -Pattern "argo-rollouts-controller"
+
+# Expected output should show:
+# - job_name: 'argo-rollouts-controller'
+
+# 4. Check Prometheus UI Status → Targets
+# Access Prometheus: kubectl port-forward svc/prometheus-service -n monitoring 9090:9090
+# You should now see both targets:
+# - argocd-application-controller (8082) - from previous lab
+# - argo-rollouts-controller (8090) - newly added
+
+# 5. Test PromQL queries in Prometheus UI
+# - rollout_info
+# - up{job="argo-rollouts-controller"}
+# - {__name__=~"rollout_.*"}
+```
+
+**Resolution Notes:**
+- The prometheus-argocd-config.yaml file contains both Argo CD and Argo Rollouts scrape configurations
+- Prometheus requires a pod restart to reload configuration changes
+- Both targets (8082 for Argo CD, 8090 for Argo Rollouts) should show as UP in Status → Targets
+- If metrics still don't appear, trigger a rollout update to generate data
 
 ## Step 9: Best Practices and Troubleshooting
 

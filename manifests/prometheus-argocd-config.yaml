@@ -29,6 +29,14 @@ data:
         scrape_interval: 30s
         metrics_path: /metrics
 
+      # Argo Rollouts Controller Metrics (Port 8090)
+      # This scrapes the required metrics: rollout_info, rollout_info_replicas_*, analysis_run_info
+      - job_name: 'argo-rollouts-controller'
+        static_configs:
+          - targets: ['argo-rollouts-metrics.argo-rollouts.svc.cluster.local:8090']
+        scrape_interval: 30s
+        metrics_path: /metrics
+
 ---
 apiVersion: apps/v1
 kind: Deployment
